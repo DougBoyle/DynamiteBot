@@ -1,13 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using BotInterface.Bot;
 using BotInterface.Game;
 
 namespace DynamiteBot {
     public class Program : IBot {
-        
         private static Dictionary<Move, Dictionary<Move, int>> outcomes = new Dictionary<Move, Dictionary<Move, int>> {
             {Move.R, new Dictionary<Move, int> {{Move.R, 0}, {Move.P, -1}, {Move.S, 1}, {Move.D, -1}, {Move.W, 1}}},
             {Move.P, new Dictionary<Move, int> {{Move.R, 1}, {Move.P, 0}, {Move.S, -1}, {Move.D, -1}, {Move.W, 1}}},
@@ -76,6 +74,8 @@ namespace DynamiteBot {
         }
         
         public static double MaxH = Math.Log(3.0);
+        // should care only about RPS since if decision is between R/D or R/W or D/W,
+        // P best or have choice between P and D.
         public static double RPSEntropy(Dictionary<Move, double> moves) {
             double R = moves[Move.R];
             double P = moves[Move.P];
@@ -89,14 +89,14 @@ namespace DynamiteBot {
         }
         
         public static Dictionary<Move, double> WinWeights(Dictionary<Move, double> moves) {
-            var R = moves[Move.S] + moves[Move.W] / 3;
-            var P = moves[Move.R] + moves[Move.W] / 3;
-            var S = moves[Move.P] + moves[Move.W] / 3;
-            var D = moves[Move.R] + moves[Move.P] + moves[Move.S]; 
-            var W = moves[Move.D];
+            var R = moves[Move.S] + moves[Move.W];
+            var P = moves[Move.R] + moves[Move.W];
+            var S = moves[Move.P] + moves[Move.W];
+            var D = moves[Move.R] + moves[Move.P] + moves[Move.S]; // scale this by usage
+            var W = moves[Move.D]; // scale this by usage
 
             var entropyScale = RPSEntropy(moves);
-            D *= 0.5 + 1.5 * entropyScale; 
+            D *= 0.5 + 1.5 * entropyScale; // half chance when predictable, double when no clue
             
             return new Dictionary<Move, double> {
                 {Move.R,R}, {Move.P, P}, {Move.S, S}, {Move.D, D/3}, {Move.W, W}
@@ -116,14 +116,16 @@ namespace DynamiteBot {
             }
             return rate;
         }
+
+        public double balance = 1.0;
         
         public Dictionary<Move, double> DynamiteAdjust(Dictionary<Move, double> moves) {
-            var myFactor = MyDynamite * 10.0 / (1000.0 - MyScore) * Math.Sqrt(CurrentValue) * 0.7;
+            var myFactor = MyDynamite / (1000.0 - MyScore) * Math.Sqrt(CurrentValue) * balance;
             moves[Move.D] *= myFactor;
             return moves;
         }
         
-        int MyDynamite = 99; 
+        public int MyDynamite = 99; // opponent will always have chance of me playing dynamite
         int TheirDynamite = 100;
         int MyScore = 0;
         int TheirScore = 0;
@@ -158,8 +160,14 @@ namespace DynamiteBot {
             dModel.Update(g);
         }
         
-        public IMarkov model = new SecondOrderMarkov(0.01);
+        public IMarkov model;
         public DynamitePredictor dModel = new DynamitePredictor(0.1, 0.99);
+        public int order;
+        
+        public Program() {
+            order = 3;
+            model = new GeneralMarkov(3, 0.01);
+        }
         
         public Move MakeMove(Gamestate gamestate)
         {
@@ -169,7 +177,8 @@ namespace DynamiteBot {
             var dRate = AdjustTheirDynamite(weights[Move.D] / tot);
             weights[Move.D] = tot * dRate;
             var selectionWeights = DynamiteAdjust(WinWeights(weights));
-            var choice = GameLength < 10 ? Choose(MovesRPS) : ChooseWeighted(selectionWeights);
+            //var choice = GameLength < order+10 ? Choose(MovesRPS) : ChooseWeighted(selectionWeights);
+            var choice = GameLength < order + 5 ? ChooseWeighted(GeneralMarkov.initial) : ChooseWeighted(selectionWeights);
             return choice;
         }
     }

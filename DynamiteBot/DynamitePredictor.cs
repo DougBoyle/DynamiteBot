@@ -8,7 +8,7 @@ namespace DynamiteBot {
 
         public DynamitePredictor(double smooth = 0.1, double decayRate = 0.99) {
             D = smooth;
-            Other = smooth;
+            Other = smooth*10;
             DecayRate = decayRate;
         }
 
