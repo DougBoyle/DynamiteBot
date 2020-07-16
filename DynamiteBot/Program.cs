@@ -6,6 +6,7 @@ using BotInterface.Game;
 
 namespace DynamiteBot {
     public class Program : IBot {
+
         private static Dictionary<Move, Dictionary<Move, int>> outcomes = new Dictionary<Move, Dictionary<Move, int>> {
             {Move.R, new Dictionary<Move, int> {{Move.R, 0}, {Move.P, -1}, {Move.S, 1}, {Move.D, -1}, {Move.W, 1}}},
             {Move.P, new Dictionary<Move, int> {{Move.R, 1}, {Move.P, 0}, {Move.S, -1}, {Move.D, -1}, {Move.W, 1}}},
@@ -18,13 +19,14 @@ namespace DynamiteBot {
             foreach (var move in moves) {
                 Console.Write($"{move.Key} = {move.Value.ToString("n2")}, ");
             }
+
             Console.WriteLine();
         }
-        
+
         public static int GetScore(Move m1, Move m2) {
             return outcomes[m1][m2];
         }
-        
+
         public static List<Move> Moves = Enum.GetValues(typeof(Move)).Cast<Move>().ToList();
         public static List<Move> MovesRPS = new List<Move> {Move.R, Move.P, Move.S};
 
@@ -43,14 +45,16 @@ namespace DynamiteBot {
                     return false;
                 }
             }
+
             return true;
         }
-        
+
         public static Random random = new Random();
 
         public static Move Choose(List<Move> choices) {
             return choices[random.Next(choices.Count)];
         }
+
         public Move ChooseWeighted(List<Move> choices, List<double> probs) {
             var p = random.NextDouble();
             var norm = probs.Sum();
@@ -58,9 +62,11 @@ namespace DynamiteBot {
                 if (p < probs[i] / norm) {
                     return choices[i];
                 }
+
                 p -= probs[i] / norm;
             }
-            return choices[choices.Count-1];
+
+            return choices[choices.Count - 1];
         }
 
         public Move ChooseWeighted(Dictionary<Move, double> choices) {
@@ -70,10 +76,12 @@ namespace DynamiteBot {
                 keys.Add(entry.Key);
                 vals.Add(entry.Value);
             }
+
             return ChooseWeighted(keys, vals);
         }
-        
+
         public static double MaxH = Math.Log(3.0);
+
         // should care only about RPS since if decision is between R/D or R/W or D/W,
         // P best or have choice between P and D.
         public static double RPSEntropy(Dictionary<Move, double> moves) {
@@ -87,7 +95,7 @@ namespace DynamiteBot {
             double H = -(R * Math.Log(R) + P * Math.Log(P) + S * Math.Log(S));
             return H / MaxH;
         }
-        
+
         public static Dictionary<Move, double> WinWeights(Dictionary<Move, double> moves) {
             var R = moves[Move.S] + moves[Move.W];
             var P = moves[Move.R] + moves[Move.W];
@@ -97,9 +105,9 @@ namespace DynamiteBot {
 
             var entropyScale = RPSEntropy(moves);
             D *= 0.5 + 1.5 * entropyScale; // half chance when predictable, double when no clue
-            
+
             return new Dictionary<Move, double> {
-                {Move.R,R}, {Move.P, P}, {Move.S, S}, {Move.D, D}, {Move.W, W/3}
+                {Move.R, R}, {Move.P, P}, {Move.S, S}, {Move.D, D}, {Move.W, W / 2}
             };
         }
 
@@ -114,17 +122,18 @@ namespace DynamiteBot {
             if (TheirDynamite <= cutOff) {
                 rate *= theirFactor;
             }
+
             return rate;
         }
 
         public double balance = 1.0;
-        
+
         public Dictionary<Move, double> DynamiteAdjust(Dictionary<Move, double> moves) {
             var myFactor = MyDynamite / (1000.0 - MyScore) * Math.Sqrt(CurrentValue) * balance;
             moves[Move.D] *= myFactor;
             return moves;
         }
-        
+
         public int MyDynamite = 99; // opponent will always have chance of me playing dynamite
         int TheirDynamite = 100;
         int MyScore = 0;
@@ -138,39 +147,47 @@ namespace DynamiteBot {
             if (rounds.Length == 0) {
                 return;
             }
+
             var round = rounds[rounds.Length - 1];
             var move1 = round.GetP1();
             var move2 = round.GetP2();
-            if (move1 == Move.D) {MyDynamite--;}
-            if (move2 == Move.D) {TheirDynamite--;}
+            if (move1 == Move.D) {
+                MyDynamite--;
+            }
+
+            if (move2 == Move.D) {
+                TheirDynamite--;
+            }
+
             var result = GetScore(move1, move2);
             if (result == 0) {
                 CurrentValue++;
             }
             else {
                 if (result > 0) {
-                    MyScore += result*CurrentValue;
-                } else {
-                    TheirScore -= result*CurrentValue;
+                    MyScore += result * CurrentValue;
                 }
+                else {
+                    TheirScore -= result * CurrentValue;
+                }
+
                 CurrentValue = 1;
             }
-            
+
             model.UpdateModel(g);
             dModel.Update(g);
         }
-        
+
         public IMarkov model;
         public DynamitePredictor dModel = new DynamitePredictor(0.1, 0.99);
         public int order;
-        
+
         public Program() {
             order = 3;
             model = new GeneralMarkov(3, 0.01);
         }
-        
-        public Move MakeMove(Gamestate gamestate)
-        {
+
+        public Move MakeMove(Gamestate gamestate) {
             Update(gamestate);
             var weights = model.GetProbs(gamestate);
             var tot = weights.Values.Sum();
@@ -178,7 +195,10 @@ namespace DynamiteBot {
             weights[Move.D] = tot * dRate;
             var selectionWeights = DynamiteAdjust(WinWeights(weights));
             //var choice = GameLength < order+10 ? Choose(MovesRPS) : ChooseWeighted(selectionWeights);
-            var choice = GameLength < order + 5 ? ChooseWeighted(GeneralMarkov.initial) : ChooseWeighted(selectionWeights);
+
+            var choice = GameLength < order + 5
+                ? ChooseWeighted(GeneralMarkov.initial)
+                : ChooseWeighted(selectionWeights);
             return choice;
         }
     }

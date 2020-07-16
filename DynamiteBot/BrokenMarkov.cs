@@ -4,7 +4,7 @@ using System.Linq;
 using BotInterface.Game;
 
 namespace DynamiteBot {
-    public class GeneralMarkov : IMarkov {
+    public class BrokenMarkov : IMarkov {
         private Dictionary<int, Dictionary<Move,double>> Matrix = new Dictionary<int, Dictionary<Move, double>>();
         private int Order;
         private double Smooth;
@@ -21,7 +21,7 @@ namespace DynamiteBot {
             return index;
         }
 
-        public GeneralMarkov(int order, double smooth = 0.01) {
+        public BrokenMarkov(int order, double smooth = 0.01) {
             Order = order;
             Smooth = smooth;
         }
@@ -59,7 +59,7 @@ namespace DynamiteBot {
                     Matrix[index][move] = Smooth;
                 }
             }
-            return new Dictionary<Move, double>(Matrix[index]);;
+            return Matrix[index];
         }
     }
 }
