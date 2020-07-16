@@ -99,7 +99,7 @@ namespace DynamiteBot {
             D *= 0.5 + 1.5 * entropyScale; // half chance when predictable, double when no clue
             
             return new Dictionary<Move, double> {
-                {Move.R,R}, {Move.P, P}, {Move.S, S}, {Move.D, D/3}, {Move.W, W}
+                {Move.R,R}, {Move.P, P}, {Move.S, S}, {Move.D, D}, {Move.W, W/3}
             };
         }
 
