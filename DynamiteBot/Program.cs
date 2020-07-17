@@ -1,205 +1,128 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using BotInterface.Bot;
 using BotInterface.Game;
 
 namespace DynamiteBot {
-    public class Program : IBot {
+    public class Program : IBot, SmartBot {
+        private List<SmartBot> Bots;
+        private List<double> Scores; // can have falling off weighting
+        private List<Dictionary<Move,double>> Predictions;
+        private double Decay;
 
-        private static Dictionary<Move, Dictionary<Move, int>> outcomes = new Dictionary<Move, Dictionary<Move, int>> {
-            {Move.R, new Dictionary<Move, int> {{Move.R, 0}, {Move.P, -1}, {Move.S, 1}, {Move.D, -1}, {Move.W, 1}}},
-            {Move.P, new Dictionary<Move, int> {{Move.R, 1}, {Move.P, 0}, {Move.S, -1}, {Move.D, -1}, {Move.W, 1}}},
-            {Move.S, new Dictionary<Move, int> {{Move.R, -1}, {Move.P, 1}, {Move.S, 0}, {Move.D, -1}, {Move.W, 1}}},
-            {Move.D, new Dictionary<Move, int> {{Move.R, 1}, {Move.P, 1}, {Move.S, 1}, {Move.D, 0}, {Move.W, -1}}},
-            {Move.W, new Dictionary<Move, int> {{Move.R, -1}, {Move.P, -1}, {Move.S, -1}, {Move.D, 1}, {Move.W, 0}}}
-        };
-
-        public static void PrintPredictions(Dictionary<Move, double> moves) {
-            foreach (var move in moves) {
-                Console.Write($"{move.Key} = {move.Value.ToString("n2")}, ");
-            }
-
-            Console.WriteLine();
-        }
-
-        public static int GetScore(Move m1, Move m2) {
-            return outcomes[m1][m2];
-        }
-
-        public static List<Move> Moves = Enum.GetValues(typeof(Move)).Cast<Move>().ToList();
-        public static List<Move> MovesRPS = new List<Move> {Move.R, Move.P, Move.S};
-
-        public static bool RoundsEqual(Round a, Round b) {
-            return a.GetP1() == b.GetP1() && a.GetP2() == b.GetP2();
-        }
-
-        public static bool RoundsEqualForOpponent(Round a, Round b) {
-            return a.GetP2() == b.GetP2();
-        }
-
-        public static bool RangeEqual(Gamestate g, int start, int shouldEqualStart, int length) {
-            Round[] rounds = g.GetRounds();
-            for (int i = 0; i < length; i++) {
-                if (!RoundsEqual(rounds[start + i], rounds[shouldEqualStart + i])) {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        public static Random random = new Random();
-
-        public static Move Choose(List<Move> choices) {
-            return choices[random.Next(choices.Count)];
-        }
-
-        public Move ChooseWeighted(List<Move> choices, List<double> probs) {
-            var p = random.NextDouble();
-            var norm = probs.Sum();
-            for (int i = 0; i < choices.Count; i++) {
-                if (p < probs[i] / norm) {
-                    return choices[i];
-                }
-
-                p -= probs[i] / norm;
-            }
-
-            return choices[choices.Count - 1];
-        }
-
-        public Move ChooseWeighted(Dictionary<Move, double> choices) {
-            var keys = new List<Move>();
-            var vals = new List<double>();
-            foreach (var entry in choices) {
-                keys.Add(entry.Key);
-                vals.Add(entry.Value);
-            }
-
-            return ChooseWeighted(keys, vals);
-        }
-
-        public static double MaxH = Math.Log(3.0);
-
-        // should care only about RPS since if decision is between R/D or R/W or D/W,
-        // P best or have choice between P and D.
-        public static double RPSEntropy(Dictionary<Move, double> moves) {
-            double R = moves[Move.R];
-            double P = moves[Move.P];
-            double S = moves[Move.S];
-            double tot = R + P + S;
-            R /= tot;
-            P /= tot;
-            S /= tot;
-            double H = -(R * Math.Log(R) + P * Math.Log(P) + S * Math.Log(S));
-            return H / MaxH;
-        }
-
-        public static Dictionary<Move, double> WinWeights(Dictionary<Move, double> moves) {
-            var R = moves[Move.S] + moves[Move.W];
-            var P = moves[Move.R] + moves[Move.W];
-            var S = moves[Move.P] + moves[Move.W];
-            var D = moves[Move.R] + moves[Move.P] + moves[Move.S]; // scale this by usage
-            var W = moves[Move.D]; // scale this by usage
-
-            var entropyScale = RPSEntropy(moves);
-            D *= 0.5 + 1.5 * entropyScale; // half chance when predictable, double when no clue
-
-            return new Dictionary<Move, double> {
-                {Move.R, R}, {Move.P, P}, {Move.S, S}, {Move.D, D}, {Move.W, W / 2}
+        private bool DrawVotes;
+        private bool Exp;
+        
+        
+        public int CurrentValue = 1;
+        
+        public Program() {
+            Bots = new List<SmartBot> {
+                new ProgramGeneral(3), new ProgramGeneral(2), new ProgramGeneral(1),
+                new AntiBot(3), new AntiBot(2), new AntiBot(1),
+                new AntiEm(), new Mk2General(1), new Mk2General(2), new Mk2General(3)
             };
+            Scores = new List<double>();
+            Scores = new List<double> {
+                5, 0, 0,
+                2, 0, 0,
+                10, 0, 0, 0
+            };
+            Decay = 0.99;
+            DrawVotes = true;
+            Exp = true;
         }
-
-        private double InstantMix = 0.5;
-        private int cutOff = 1;
-
-        private double AdjustTheirDynamite(double rate) {
-            var instantRate = dModel.GetEstimate();
-            var theirFactor = (TheirDynamite * 10.0) / (1000.0 - TheirScore);
-
-            rate = rate * (1 - InstantMix) + instantRate * InstantMix;
-            if (TheirDynamite <= cutOff) {
-                rate *= theirFactor;
-            }
-
-            return rate;
-        }
-
-        public double balance = 1.0;
-
-        public Dictionary<Move, double> DynamiteAdjust(Dictionary<Move, double> moves) {
-            var myFactor = MyDynamite / (1000.0 - MyScore) * Math.Sqrt(CurrentValue) * balance;
-            moves[Move.D] *= myFactor;
-            return moves;
-        }
-
-        public int MyDynamite = 99; // opponent will always have chance of me playing dynamite
-        int TheirDynamite = 100;
-        int MyScore = 0;
-        int TheirScore = 0;
-        int CurrentValue = 1;
-        private int GameLength = 0;
 
         public void Update(Gamestate g) {
             var rounds = g.GetRounds();
-            GameLength++;
             if (rounds.Length == 0) {
                 return;
             }
-
             var round = rounds[rounds.Length - 1];
             var move1 = round.GetP1();
             var move2 = round.GetP2();
-            if (move1 == Move.D) {
-                MyDynamite--;
-            }
+            int result;
+            
+            for (var i = 0; i < Bots.Count; i++) {
+                var moves = Predictions[i];
+                foreach (var m in moves) {
+                    if (Exp) {
+                        result = Utils.GetScore(m.Key, move2);
+                    }
+                    else {
+                        result = Math.Max(Utils.GetScore(m.Key, move2), 0);
+                    }
 
-            if (move2 == Move.D) {
-                TheirDynamite--;
+                    Scores[i] = Scores[i] * Decay + result * CurrentValue * m.Value;
+                }
             }
-
-            var result = GetScore(move1, move2);
+            result = Utils.GetScore(move1, move2);
             if (result == 0) {
                 CurrentValue++;
             }
             else {
-                if (result > 0) {
-                    MyScore += result * CurrentValue;
-                }
-                else {
-                    TheirScore -= result * CurrentValue;
-                }
-
                 CurrentValue = 1;
             }
-
-            model.UpdateModel(g);
-            dModel.Update(g);
+        }
+        
+        public Dictionary<Move, double> GetProbs(Gamestate g) {
+            Update(g);
+            Dictionary<Move, double> votes = new Dictionary<Move, double>();
+            foreach (var move in Utils.Moves) {
+                votes[move] = 0.0;
+            }
+            Predictions = new List<Dictionary<Move, double>>();
+            for (int i = 0; i < Bots.Count; i++) {
+                // Could add each bot's distribution instead and do full Baysian
+                var moves = Bots[i].GetProbs(g);
+                Predictions.Add(moves);
+                foreach (var m in moves) {
+                    if (Exp) {
+                        votes[m.Key] += m.Value * Math.Exp(Scores[i] / 8.0);
+                    }
+                    else {
+                        votes[m.Key] += m.Value * Scores[i];
+                    }
+                }
+            }
+            return votes;
         }
 
-        public IMarkov model;
-        public DynamitePredictor dModel = new DynamitePredictor(0.1, 0.99);
-        public int order;
+        public Move MakeMove(Gamestate g) {
+            Update(g);
+            Dictionary<Move, double> votes = new Dictionary<Move, double>();
+            foreach (var move in Utils.Moves) {
+                votes[move] = 0.0;
+            }
+            Predictions = new List<Dictionary<Move, double>>();
+            for (int i = 0; i < Bots.Count; i++) {
+                // Could add each bot's distribution instead and do full Baysian
+                var moves = Bots[i].GetProbs(g);
+                Predictions.Add(moves);
+                foreach (var m in moves) {
+                    if (Exp) {
+                        votes[m.Key] += m.Value * Math.Exp(Scores[i] / 8.0);
+                    }
+                    else {
+                        votes[m.Key] += m.Value * Scores[i];
+                    }
+                }
+            }
 
-        public Program() {
-            order = 3;
-            model = new GeneralMarkov(3, 0.01);
-        }
-
-        public Move MakeMove(Gamestate gamestate) {
-            Update(gamestate);
-            var weights = model.GetProbs(gamestate);
-            var tot = weights.Values.Sum();
-            var dRate = AdjustTheirDynamite(weights[Move.D] / tot);
-            weights[Move.D] = tot * dRate;
-            var selectionWeights = DynamiteAdjust(WinWeights(weights));
-            //var choice = GameLength < order+10 ? Choose(MovesRPS) : ChooseWeighted(selectionWeights);
-
-            var choice = GameLength < order + 5
-                ? ChooseWeighted(GeneralMarkov.initial)
-                : ChooseWeighted(selectionWeights);
-            return choice;
+            // could select from distribution at this point
+            if (DrawVotes) {
+                return Utils.ChooseWeighted(votes);
+            }
+            var best = double.MinValue;
+            var bestMove = Move.R;
+            foreach (var vote in votes) {
+                if (vote.Value > best) {
+                    best = vote.Value;
+                    bestMove = vote.Key;
+                }
+            }
+            return bestMove;
         }
     }
 }
+    

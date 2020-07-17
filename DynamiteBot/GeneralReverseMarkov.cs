@@ -1,17 +1,17 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using BotInterface.Game;
 
 namespace DynamiteBot {
-    public class GeneralMarkov : IMarkov {
-        private Dictionary<int, Dictionary<Move,double>> Matrix = new Dictionary<int, Dictionary<Move, double>>();
+    public class GeneralReverseMarkov {
+        private Dictionary<int, Dictionary<Move, double>> Matrix = new Dictionary<int, Dictionary<Move, double>>();
+
         private int Order;
         private double Smooth;
 
-        public static Dictionary<Move,int> MoveToInt = new Dictionary<Move, int>()
+        public static Dictionary<Move, int> MoveToInt = new Dictionary<Move, int>()
             {{Move.R, 0}, {Move.P, 1}, {Move.S, 2}, {Move.D, 3}, {Move.W, 4}};
-        
+
         public int GetIndex(IEnumerable<Round> rounds) {
             int index = 0;
             foreach (var round in rounds) {
@@ -21,11 +21,11 @@ namespace DynamiteBot {
             return index;
         }
 
-        public GeneralMarkov(int order, double smooth = 0.01) {
+        public GeneralReverseMarkov(int order = 3, double smooth = 0.01) {
             Order = order;
             Smooth = smooth;
         }
-        
+
         public void UpdateModel(Gamestate gamestate) {
             var rounds = gamestate.GetRounds();
             if (rounds.Length <= Order) return;
@@ -38,13 +38,13 @@ namespace DynamiteBot {
                     Matrix[index][move] = Smooth;
                 }
             }
-            Matrix[index][latest.GetP2()] += 1;
-        }
-        
-        public Dictionary<Move, double> initial = new Dictionary<Move, double> {
-            {Move.R, 1.0}, {Move.P, 1.0}, {Move.S, 1.0}, {Move.D, 1.2}, {Move.W, 0.2}
-        };
 
+            Matrix[index][latest.GetP1()] += 1;
+        }
+
+        public static Dictionary<Move, double> initial = new Dictionary<Move, double> {
+            {Move.R, 1.0}, {Move.P, 1.0}, {Move.S, 1.0}, {Move.D, 1.0}, {Move.W, 1.0}
+        };
         public Dictionary<Move, double> GetInitial() {
             return new Dictionary<Move, double>(initial);
         }
@@ -58,6 +58,7 @@ namespace DynamiteBot {
         public Dictionary<Move, double> GetProbs(Gamestate gamestate) {
             var rounds = gamestate.GetRounds();
             if (rounds.Length < Order) return initial;
+            //  var segment = new ArraySegment<Round>(rounds, rounds.Length - Order, Order);
             var segment = new ArraySegment<Round>(rounds, rounds.Length - Order, Order);
             var index = GetIndex(segment);
             if (!Matrix.ContainsKey(index)) {
@@ -66,7 +67,8 @@ namespace DynamiteBot {
                     Matrix[index][move] = Smooth;
                 }
             }
-            return new Dictionary<Move, double>(Matrix[index]);;
+
+            return new Dictionary<Move, double>(Matrix[index]);
         }
     }
 }

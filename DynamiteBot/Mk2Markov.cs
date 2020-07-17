@@ -1,13 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using BotInterface.Game;
 
 namespace DynamiteBot {
-    public class BrokenMarkov : IMarkov {
+    public class Mk2Markov : IMarkov {
         private Dictionary<int, Dictionary<Move,double>> Matrix = new Dictionary<int, Dictionary<Move, double>>();
         private int Order;
-        private double Smooth;
 
         public static Dictionary<Move,int> MoveToInt = new Dictionary<Move, int>()
             {{Move.R, 0}, {Move.P, 1}, {Move.S, 2}, {Move.D, 3}, {Move.W, 4}};
@@ -21,9 +19,8 @@ namespace DynamiteBot {
             return index;
         }
 
-        public BrokenMarkov(int order, double smooth = 0.01) {
+        public Mk2Markov(int order) {
             Order = order;
-            Smooth = smooth;
         }
         
         public void UpdateModel(Gamestate gamestate) {
@@ -33,17 +30,21 @@ namespace DynamiteBot {
             var latest = rounds[rounds.Length - 1];
             var index = GetIndex(segment);
             if (!Matrix.ContainsKey(index)) {
-                Matrix[index] = new Dictionary<Move, double>();
-                foreach (var move in Program.Moves) {
-                    Matrix[index][move] = Smooth;
-                }
+                Matrix[index] = new Dictionary<Move, double>(initial);
             }
             Matrix[index][latest.GetP2()] += 1;
         }
         
-        public static Dictionary<Move, double> initial = new Dictionary<Move, double> {
+        public Dictionary<Move, double> initial = new Dictionary<Move, double> {
             {Move.R, 1.0}, {Move.P, 1.0}, {Move.S, 1.0}, {Move.D, 1.2}, {Move.W, 0.2}
         };
+
+        public Dictionary<Move, double> GetInitial() {
+            return new Dictionary<Move, double>(initial);
+        }
+        public void SetInitial(Dictionary<Move, double> m) {
+            initial = m;
+        }
 
         // TODO: Need to handle if no information
         // Could have a threshold detail level and fall back to lower order if needed
@@ -54,12 +55,9 @@ namespace DynamiteBot {
             var segment = new ArraySegment<Round>(rounds, rounds.Length - Order, Order);
             var index = GetIndex(segment);
             if (!Matrix.ContainsKey(index)) {
-                Matrix[index] = new Dictionary<Move, double>();
-                foreach (var move in Program.Moves) {
-                    Matrix[index][move] = Smooth;
-                }
+                Matrix[index] = new Dictionary<Move, double>(initial);
             }
-            return Matrix[index];
+            return new Dictionary<Move, double>(Matrix[index]);;
         }
     }
 }
